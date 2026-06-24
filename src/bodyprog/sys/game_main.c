@@ -1388,6 +1388,11 @@ void MainLoop(void) // 0x80032EE0
 
         g_SysWork.bgmStatusFlags = BgmStatusFlag_None;
 
+#ifdef SH_PC_PORT
+        /* Apply a per-locale font atlas override (e.g. Russian Cyrillic) once the
+         * stock FONT16 has loaded. No-op for locales without a replacement font. */
+        { extern void PcLoc_FontOverrideTick(void); PcLoc_FontOverrideTick(); }
+#endif
         PC_OT_SCAN("pre-GameStateUpdate");
         // Call update function for current GameState.
         g_GameStateUpdateFuncs[g_GameWork.gameState]();

@@ -17,7 +17,13 @@
 
 #include <SDL.h>
 
+#include "pc_locale_cyrillic.h" /* RU_CODEPAGE, RU_GLYPH_WIDTHS (generated) */
+
+/* In text_draw.c; swaps the kerning table for a locale's replacement font. */
+extern void Gfx_SetFontWidths(const unsigned char* widths);
+
 #define LOC_LOCALES_DIR  "Assets/Locales"
+#define LOC_FONT_FILE     "Font16.tim"
 #define LOC_METADATA_FILE "Metadata.json"
 #define LOC_LOCALE_FILE   "Locale.json"
 #define LOC_MAX_LOCALES   32
@@ -51,6 +57,25 @@ static int          s_fontAccents  = 1;
 
 static s_LocPair*   s_pairs        = NULL; /* active locale, sorted by key */
 static int          s_pairCount    = 0;
+
+/* Replacement font for the active locale (e.g. the Russian Cyrillic codepage).
+ * When present, Cyrillic code points transliterate to codepage bytes instead of
+ * folding to '?', and the font-override uploader swaps the VRAM atlas. */
+static char         s_activeFontPath[512] = {0};
+static int          s_activeHasFont       = 0;
+static int          s_localeGen           = 0; /* bumped on each activation */
+
+/* Map a Cyrillic code point to its atlas slot byte, or 0 if unmapped. */
+static int CyrByte(unsigned int cp)
+{
+    int i;
+    for (i = 0; i < (int)(sizeof(RU_CODEPAGE) / sizeof(RU_CODEPAGE[0])); i++)
+    {
+        if (RU_CODEPAGE[i].cp == cp)
+            return RU_CODEPAGE[i].byte;
+    }
+    return 0;
+}
 
 /* Case-insensitive string equality (avoids depending on strcasecmp portability). */
 static int StrCaseEq(const char* a, const char* b)
@@ -274,15 +299,29 @@ static char* Transliterate(const char* src)
             unsigned int cp;
             char         marker = 0;
             size_t       rl;
+            int          cyr    = 0;
 
             n   = Utf8Decode(s, &cp);
-            rep = AccentDecompose(cp, &marker);
-            if (rep == NULL)
+
+            /* Cyrillic codepage: when the active locale ships a replacement font,
+             * a Cyrillic code point becomes the single byte that indexes its slot. */
+            if (s_activeHasFont)
+                cyr = CyrByte(cp);
+
+            if (cyr != 0)
             {
-                marker = 0;
-                rep    = "?";
+                rep = NULL;
             }
-            rl = strlen(rep);
+            else
+            {
+                rep = AccentDecompose(cp, &marker);
+                if (rep == NULL)
+                {
+                    marker = 0;
+                    rep    = "?";
+                }
+            }
+            rl = cyr ? 1 : strlen(rep);
 
             /* +2 headroom: optional accent marker byte + base, plus the NUL. */
             while (len + rl + 2 >= cap)
@@ -294,10 +333,17 @@ static char* Transliterate(const char* src)
                 dst = grown;
             }
 
-            if (marker != 0 && s_fontAccents)
-                dst[len++] = marker;
-            memcpy(dst + len, rep, rl);
-            len += rl;
+            if (cyr != 0)
+            {
+                dst[len++] = (char)cyr;
+            }
+            else
+            {
+                if (marker != 0 && s_fontAccents)
+                    dst[len++] = marker;
+                memcpy(dst + len, rep, rl);
+                len += rl;
+            }
         }
 
         s += n;
@@ -680,6 +726,28 @@ static void LoadActiveLocale(int idx)
     s_pairs     = NULL;
     s_pairCount = 0;
     s_activeIdx = idx;
+    s_localeGen++;
+
+    /* Detect a replacement font (e.g. the Russian Cyrillic codepage). Must be set
+     * BEFORE transliterating, since Cyrillic mapping depends on it. */
+    s_activeHasFont     = 0;
+    s_activeFontPath[0] = '\0';
+    Gfx_SetFontWidths(NULL);
+    if (idx >= 0 && idx < s_localeCount)
+    {
+        struct stat st;
+        snprintf(s_activeFontPath, sizeof(s_activeFontPath), "%s/%s/%s",
+                 LOC_LOCALES_DIR, s_locales[idx].name, LOC_FONT_FILE);
+        if (stat(s_activeFontPath, &st) == 0)
+        {
+            s_activeHasFont = 1;
+            Gfx_SetFontWidths(RU_GLYPH_WIDTHS);
+        }
+        else
+        {
+            s_activeFontPath[0] = '\0';
+        }
+    }
 
     if (idx < 0 || idx >= s_localeCount)
         return;
@@ -728,6 +796,19 @@ const char* Loc_Get(const char* key, const char* fallback)
     }
 
     return (fallback != NULL) ? fallback : "";
+}
+
+/* Path to the active locale's replacement font atlas, or "" if it uses the
+ * stock font. Used by the font-override uploader. */
+const char* Loc_ActiveFontPath(void)
+{
+    return s_activeFontPath;
+}
+
+/* Bumped on every locale activation; lets the font uploader re-apply on change. */
+int Loc_Generation(void)
+{
+    return s_localeGen;
 }
 
 /* ============================================================

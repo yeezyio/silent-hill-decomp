@@ -26,6 +26,16 @@ static const u8 FONT_12X16_GLYPH_WIDTHS[FONT_12X16_GLYPH_COUNT] = {
     7,  11, 11, 6,  6,  10, 6,  13, 11, 10, 11, 10, 8,  8,  7,  10, 10, 12, 10, 10, 9
 };
 
+#ifdef SH_PC_PORT
+/* Active glyph-width table. Localization swaps this to a locale-specific table
+ * (e.g. the Russian codepage font) via Gfx_SetFontWidths. After this point the
+ * FONT_12X16_GLYPH_WIDTHS name resolves to the pointer, so all kerning reads
+ * follow the active font. */
+const u8* g_FontGlyphWidths = FONT_12X16_GLYPH_WIDTHS;
+void Gfx_SetFontWidths(const u8* widths) { g_FontGlyphWidths = widths ? widths : FONT_12X16_GLYPH_WIDTHS; }
+#define FONT_12X16_GLYPH_WIDTHS g_FontGlyphWidths
+#endif
+
 /** @brief See `e_StringColorId`. */
 static const u32 STRING_COLORS[StringColorId_Count] = {
     COLOR_RGBC(160, 128, 64,  PRIM_RECT | RECT_TEXTURE),

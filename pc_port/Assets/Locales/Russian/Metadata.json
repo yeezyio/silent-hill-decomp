@@ -1,0 +1,7 @@
+{
+    "Label": "Русский",
+    "Comment": "Русский перевод (UI). Использует Cyrillic codepage-шрифт.",
+    "LanguageCode": "ru",
+    "CountryCode": "RU",
+    "Priority": 5
+}
