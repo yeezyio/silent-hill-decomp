@@ -1,0 +1,7 @@
+{
+    "Label":        "French",
+    "Comment":      "Demo French localization (UI subset) to showcase the system. Accents are folded to ASCII by the PSX font.",
+    "LanguageCode": "fr",
+    "CountryCode":  "FR",
+    "Priority":     2
+}

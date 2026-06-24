@@ -1,5 +1,10 @@
 asm/
 assets/
+# Re-include the hand-authored PC-port localization assets. These are shipped
+# locale files, not the extracted PSX `assets/` data the rule above targets
+# (the patterns collide on case-insensitive filesystems).
+!pc_port/Assets/
+!pc_port/Assets/**
 build/
 rom/
 linkers/

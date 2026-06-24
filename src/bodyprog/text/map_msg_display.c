@@ -392,7 +392,7 @@ s32 Gfx_MapMsg_SelectionUpdate(u8 mapMsgIdx, s32* arg1) // 0x80036B5C
     s32 i;
     s32 mapMsgCode;
 
-    mapMsgCode = Gfx_MapMsg_StringDraw(g_MapOverlayHdr.mapMessages[mapMsgIdx], *arg1);
+    mapMsgCode = Gfx_MapMsg_StringDraw((char*)SH_MAPMSG(mapMsgIdx), *arg1);
 
     g_MapMsg_SelectFlashTimer += g_DeltaTimeRaw;
     if (g_MapMsg_SelectFlashTimer >= Q12(0.5f))
@@ -430,7 +430,7 @@ s32 Gfx_MapMsg_SelectionUpdate(u8 mapMsgIdx, s32* arg1) // 0x80036B5C
 
 #if VERSION_REGION_IS(NTSC)
                     Gfx_StringSetPosition(32, (STRING_LINE_OFFSET * i) + 98);
-                    Gfx_StringDraw(g_MapOverlayHdr.mapMessages[i], MAP_MESSAGE_DISPLAY_ALL_LENGTH);
+                    Gfx_StringDraw((char*)SH_MAPMSG(i), MAP_MESSAGE_DISPLAY_ALL_LENGTH);
 #else
                     Gfx_StringDraw_JP(g_MapOverlayHdr.mapMessages[i], i);
 #endif
@@ -459,7 +459,7 @@ s32 Gfx_MapMsg_SelectionUpdate(u8 mapMsgIdx, s32* arg1) // 0x80036B5C
 
 #if VERSION_REGION_IS(NTSC)
                     Gfx_StringSetPosition(32, (STRING_LINE_OFFSET * i) + 96);
-                    Gfx_StringDraw(g_MapOverlayHdr.mapMessages[(mapMsgIdx + i) + 1], MAP_MESSAGE_DISPLAY_ALL_LENGTH);
+                    Gfx_StringDraw((char*)SH_MAPMSG((mapMsgIdx + i) + 1), MAP_MESSAGE_DISPLAY_ALL_LENGTH);
 #else
                     Gfx_StringDraw_JP(g_MapOverlayHdr.mapMessages[(mapMsgIdx + i) + 1], i);
 #endif

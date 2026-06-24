@@ -5,6 +5,7 @@
 #include "psx_memory.h"
 #include "pc_config.h"
 #include "map_registry.h"
+#include "pc_locale.h"
 #endif
 
 #include <psyq/libetc.h>
@@ -477,19 +478,34 @@ static void MainMenu_MainTextDraw(void) // 0x8003B568
         "EXTRA" /** @unused See `e_MainMenuEntry`. */
     };
     static const u8 STR_OFFSETS_X[] = { 29, 50, 32, 39, 33 }; // @unused Element at index 4. See `g_MainMenu_VisibleEntryFlags`.
+    #ifdef SH_PC_PORT
+    static const char* const ENTRY_KEYS[] = {
+        "MainMenu_Load", "MainMenu_Continue", "MainMenu_Start", "MainMenu_Option", "MainMenu_Extra"
+    };
+    #endif
 
     s32 i;
 
     // Draw selection strings.
     for (i = 0; i < MainMenuEntry_Count; i++)
     {
+    #ifdef SH_PC_PORT
+        const char* entryStr;
+    #endif
+
         // Check entry visibility flag.
         if (!(g_MainMenu_VisibleEntryFlags & (1 << i)))
         {
             continue;
         }
 
+    #ifdef SH_PC_PORT
+        /* Center on the localized string's actual width, not the English offset. */
+        entryStr = Loc_Get(ENTRY_KEYS[i], MAIN_MENU_ENTRY_STRINGS[i]);
+        Gfx_StringSetPosition(COLUMN_POS_X - (Gfx_StringWidth(entryStr) / 2), COLUMN_POS_Y + (i * STR_OFFSET_Y));
+    #else
         Gfx_StringSetPosition(COLUMN_POS_X - STR_OFFSETS_X[i], COLUMN_POS_Y + (i * STR_OFFSET_Y));
+    #endif
         Gfx_StringSetColor(StringColorId_White);
 
         if (i == g_MainMenu_SelectedEntry)
@@ -501,7 +517,11 @@ static void MainMenu_MainTextDraw(void) // 0x8003B568
             Gfx_StringDraw("_", DEFAULT_MAP_MESSAGE_LENGTH);
         }
 
+    #ifdef SH_PC_PORT
+        Gfx_StringDraw((char*)entryStr, DEFAULT_MAP_MESSAGE_LENGTH);
+    #else
         Gfx_StringDraw(MAIN_MENU_ENTRY_STRINGS[i], DEFAULT_MAP_MESSAGE_LENGTH);
+    #endif
 
         if (i == g_MainMenu_SelectedEntry)
         {
@@ -525,13 +545,21 @@ static void MainMenu_DifficultyTextDraw(s32 idx) // 0x8003B678
         "HARD"
     };
     static const u8 STR_OFFSETS_X[] = { 28, 43, 30 };
+    #ifdef SH_PC_PORT
+    static const char* const ENTRY_KEYS[] = { "MainMenu_Easy", "MainMenu_Normal", "MainMenu_Hard" };
+    #endif
 
     s32 i;
 
     // Draw selection strings.
     for (i = 0; i < DIFFICULTY_MENU_SELECTION_COUNT; i++)
     {
+    #ifdef SH_PC_PORT
+        const char* entryStr = Loc_Get(ENTRY_KEYS[i], DIFFICULTY_MENU_ENTRY_STRINGS[i]);
+        Gfx_StringSetPosition(COLUMN_POS_X - (Gfx_StringWidth(entryStr) / 2), COLUMN_POS_Y + (i * STR_OFFSET_Y));
+    #else
         Gfx_StringSetPosition(COLUMN_POS_X - STR_OFFSETS_X[i], COLUMN_POS_Y + (i * STR_OFFSET_Y));
+    #endif
         Gfx_StringSetColor(StringColorId_White);
 
         if (i == idx)
@@ -543,7 +571,11 @@ static void MainMenu_DifficultyTextDraw(s32 idx) // 0x8003B678
             Gfx_StringDraw("_", DEFAULT_MAP_MESSAGE_LENGTH);
         }
 
+    #ifdef SH_PC_PORT
+        Gfx_StringDraw((char*)entryStr, DEFAULT_MAP_MESSAGE_LENGTH);
+    #else
         Gfx_StringDraw(DIFFICULTY_MENU_ENTRY_STRINGS[i], DEFAULT_MAP_MESSAGE_LENGTH);
+    #endif
 
         if (i == idx)
         {

@@ -41,6 +41,7 @@
 extern void MainLoop(void);
 extern void Fs_QueueInitialize(void);
 extern void PcPort_InitCharaAnimInfo(void);
+extern void Loc_Init(void); /* pc_port/src/locale.c */
 
 /* Overlay pointers from main.c - need runtime init on PC */
 extern void* g_OvlDynamic;
@@ -713,6 +714,11 @@ int main(int argc, char* argv[])
     SH_LOG("Initializing map registry...");
     MapRegistry_Init();
     SH_LOG("Active map: %s", g_PcConfig.mapName);
+
+    /* Initialize the localization system. After config (reads g_PcConfig.language)
+     * and game-data path resolution, before any menu/string is drawn. */
+    SH_LOG("Initializing localization...");
+    Loc_Init();
 
     SH_LOG("All subsystems initialized. Entering MainLoop...");
 

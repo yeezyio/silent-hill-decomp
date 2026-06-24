@@ -54,6 +54,11 @@ typedef struct {
     char padStart[24], padSelect[24];
 
     char mapName[64];    /* e.g. "map0_s00" */
+
+    char language[32];   /* active locale folder name ("English"), language code
+                          * ("en"), or "auto" for system match (config key: language) */
+    int  fontAccents;    /* 1 = overlay accent glyphs on letters for translated text
+                          * (é, ü, ñ...); 0 = fold to bare ASCII (config key: font_accents) */
 } s_PcConfig;
 
 extern s_PcConfig g_PcConfig;

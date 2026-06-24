@@ -15,6 +15,9 @@
 #include "bodyprog/text/text_draw.h"
 #include "screens/options.h"
 #include "screens/stream/stream.h"
+#ifdef SH_PC_PORT
+#include "pc_locale.h"
+#endif
 
 #define LINE_CURSOR_TIMER_MAX 8
 #ifdef SH_PC_PORT
@@ -126,6 +129,13 @@ void GameState_Options_Update(void) // 0x801E2D44
             }
 
             g_ExtraOptionsMenu_EntryCount = (g_GameWork.config.extraOptionsEnabled) ? 8 : 6;
+#ifdef SH_PC_PORT
+            /* Append a PC-only "Language" row as the always-last entry. Kept last
+             * so its index never aliases a fixed enum case in the control/draw
+             * switches; those switches are preempted for this row below. */
+            if (Loc_Count() > 1)
+                g_ExtraOptionsMenu_EntryCount++;
+#endif
             g_GameWork.gameStateSteps[0]  = OptionsMenuState_MainOptions;
             g_SysWork.counters_1C[1]              = 0;
             g_GameWork.gameStateSteps[1]  = 0;
@@ -321,6 +331,22 @@ void Options_ExtraOptionsMenu_Control(void) // 0x801E318C
         }
 
         // Handle config change.
+#ifdef SH_PC_PORT
+        if (Loc_Count() > 1 && g_ExtraOptionsMenu_SelectedEntry == g_ExtraOptionsMenu_EntryCount - 1)
+        {
+            if (g_Controller0->clickedBtnFlags & ControllerFlag_LStickRight)
+            {
+                Sd_PlaySfx(Sfx_MenuMove, 0, 64);
+                Loc_CycleActive(1);
+            }
+            if (g_Controller0->clickedBtnFlags & ControllerFlag_LStickLeft)
+            {
+                Sd_PlaySfx(Sfx_MenuMove, 0, 64);
+                Loc_CycleActive(-1);
+            }
+        }
+        else
+#endif
         switch (g_ExtraOptionsMenu_SelectedEntry)
         {
             case ExtraOptionsMenuEntry_WeaponCtrl:
@@ -847,6 +873,13 @@ void Options_ExtraOptionsMenu_EntryStringsDraw(void) // 0x801E416C
         "View_Mode",
         "Bullet_Adjust"
     };
+    #ifdef SH_PC_PORT
+    static const char* const ENTRY_KEYS[] = {
+        "OptionsMenu_WeaponControl", "OptionsMenu_BloodColor", "OptionsMenu_ViewControl",
+        "OptionsMenu_RetreatTurn",   "OptionsMenu_WalkRunControl", "OptionsMenu_AutoAiming",
+        "OptionsMenu_ViewMode",      "OptionsMenu_BulletAdjust"
+    };
+    #endif
 
     // @unused Likely an older implementation for active highlight selection position reference setup found in `Options_ExtraOptionsMenu_SelectionHighlightDraw`.
     if (g_Options_SelectionHighlightTimer == 0)
@@ -869,7 +902,14 @@ void Options_ExtraOptionsMenu_EntryStringsDraw(void) // 0x801E416C
     {
         Gfx_StringSetPosition(LINE_BASE_X, LINE_BASE_Y + (i * LINE_OFFSET_Y));
         Gfx_Strings2dLayerIdxSet(8);
+    #ifdef SH_PC_PORT
+        if (Loc_Count() > 1 && i == g_ExtraOptionsMenu_EntryCount - 1)
+            Gfx_StringDraw((char*)Loc_Get("OptionsMenu_Language", "Language"), DEFAULT_MAP_MESSAGE_LENGTH);
+        else
+            Gfx_StringDraw((char*)Loc_Get(ENTRY_KEYS[i], ENTRY_STRS[i]), DEFAULT_MAP_MESSAGE_LENGTH);
+    #else
         Gfx_StringDraw(ENTRY_STRS[i], DEFAULT_MAP_MESSAGE_LENGTH);
+    #endif
     }
 
     #undef LINE_BASE_X
@@ -904,6 +944,13 @@ void Options_MainOptionsMenu_EntryStringsDraw(void) // 0x801E42EC
         "BGM_Volume",
         "SE_Volume"
     };
+    #ifdef SH_PC_PORT
+    static const char* const ENTRY_KEYS[] = {
+        "OptionsMenu_Exit",       "OptionsMenu_BrightLevel", "OptionsMenu_ContConfig",
+        "OptionsMenu_ScreenPosition", "OptionsMenu_Vibration", "OptionsMenu_AutoLoad",
+        "OptionsMenu_Sound",      "OptionsMenu_BgmVol",      "OptionsMenu_SeVol"
+    };
+    #endif
 
     // @unused Likely an older implementation for active highlight selection position reference setup found in `Options_MainOptionsMenu_SelectionHighlightDraw`.
     if (g_Options_SelectionHighlightTimer == 0)
@@ -926,7 +973,11 @@ void Options_MainOptionsMenu_EntryStringsDraw(void) // 0x801E42EC
     {
         Gfx_StringSetPosition(LINE_BASE_X, LINE_BASE_Y + (i * LINE_OFFSET_Y));
         Gfx_Strings2dLayerIdxSet(8);
+    #ifdef SH_PC_PORT
+        Gfx_StringDraw((char*)Loc_Get(ENTRY_KEYS[i], ENTRY_STRS[i]), DEFAULT_MAP_MESSAGE_LENGTH);
+    #else
         Gfx_StringDraw(ENTRY_STRS[i], DEFAULT_MAP_MESSAGE_LENGTH);
+    #endif
     }
 
     Gfx_StringsReset2dLayerIdx();
@@ -958,6 +1009,9 @@ void Options_ExtraOptionsMenu_SelectionHighlightDraw(void) // 0x801E4450
 
     const u8 SELECTION_HIGHLIGHT_WIDTHS[] = {
         157, 126, 135, 135, 157, 130, 112, 134
+    #ifdef SH_PC_PORT
+        , 120 /* PC-only Language row */
+    #endif
     };
 
     // 12x12 quad.
@@ -1265,6 +1319,15 @@ void Options_ExtraOptionsMenu_ConfigDraw(void) // 0x801E4B2C
     // Draw entry strings.
     for (j = 0; j < g_ExtraOptionsMenu_EntryCount; j++)
     {
+    #ifdef SH_PC_PORT
+        // PC-only Language row: show the active locale label instead of a config value.
+        if (Loc_Count() > 1 && j == g_ExtraOptionsMenu_EntryCount - 1)
+        {
+            Gfx_StringSetPosition(176, STR_BASE_Y + (STR_OFFSET_Y * j));
+            Gfx_StringDraw((char*)Loc_ActiveLabel(), 16);
+            continue;
+        }
+    #endif
         switch (j)
         {
             case ExtraOptionsMenuEntry_WeaponCtrl:

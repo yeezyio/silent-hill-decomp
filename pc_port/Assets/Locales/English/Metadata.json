@@ -1,0 +1,7 @@
+{
+    "Label":        "English (US)",
+    "Comment":      "Original US English text. This file is the reference template; the game falls back to the embedded English strings, so it is optional.",
+    "LanguageCode": "en",
+    "CountryCode":  "US",
+    "Priority":     1
+}

@@ -13,6 +13,7 @@
 #include "main/rng.h"
 #ifdef SH_PC_PORT
 #include "sh_log.h"
+#include "pc_locale.h"
 #endif
 
 const s32 pad_rodata_800262F8 = 0;
@@ -522,12 +523,14 @@ const char* g_ItemDescriptions[] = {
 static const char* s_ItemName(u8 id) {
     int idx = (int)id - 32;
     int n   = (int)(sizeof(INVENTORY_ITEM_NAMES) / sizeof(INVENTORY_ITEM_NAMES[0]));
-    return (idx >= 0 && idx < n && INVENTORY_ITEM_NAMES[idx]) ? INVENTORY_ITEM_NAMES[idx] : "";
+    const char* en = (idx >= 0 && idx < n && INVENTORY_ITEM_NAMES[idx]) ? INVENTORY_ITEM_NAMES[idx] : "";
+    return Loc_Item((int)id, en);
 }
 static const char* s_ItemDesc(u8 id) {
     int idx = (int)id - 32;
     int n   = (int)(sizeof(g_ItemDescriptions) / sizeof(g_ItemDescriptions[0]));
-    return (idx >= 0 && idx < n && g_ItemDescriptions[idx]) ? g_ItemDescriptions[idx] : "";
+    const char* en = (idx >= 0 && idx < n && g_ItemDescriptions[idx]) ? g_ItemDescriptions[idx] : "";
+    return Loc_ItemDesc((int)id, en);
 }
 #endif
 

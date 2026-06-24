@@ -141,4 +141,18 @@ void Gfx_StringDrawInt(s32 widthMin, s32 strLength);
     void ItemScreen_TmdGsFCallInit(void);
 #endif
 
+#ifdef SH_PC_PORT
+/** Pixel width of a screen-space string (as drawn by `Gfx_StringDraw`). Used to
+ *  re-center localized strings whose length differs from the English original. */
+s32 Gfx_StringWidth(const char* str);
+
+/** Localization hook for in-game map messages. Returns the active-locale
+ *  translation of message `idx` for the current map, or the original embedded
+ *  string when there is no translation. Implemented in pc_port/src/map_registry.c. */
+const char* PcLoc_MapMsg(s32 idx);
+#define SH_MAPMSG(idx) PcLoc_MapMsg(idx)
+#else
+#define SH_MAPMSG(idx) (g_MapOverlayHdr.mapMessages[idx])
+#endif
+
 #endif

@@ -13,6 +13,9 @@
 #include "bodyprog/item_screens.h"
 #include "bodyprog/player.h"
 #include "bodyprog/math/math.h"
+#ifdef SH_PC_PORT
+#include "pc_locale.h"
+#endif
 
 static const s32 pad_rodata_80025EAC = 0;
 
@@ -500,10 +503,18 @@ void Gfx_Results_Save(void) // 0x8004D1A0
     g_SysWork.enableHighResGlyphs = true;
 
     Gfx_StringSetPosition(90, 92);
+#ifdef SH_PC_PORT
+    Gfx_StringDraw((char*)Loc_Get("SaveDlg_OkToSave", "\x07Is_it_OK_to_save?"), DEFAULT_MAP_MESSAGE_LENGTH);
+#else
     Gfx_StringDraw("\x07Is_it_OK_to_save?", DEFAULT_MAP_MESSAGE_LENGTH);
+#endif
 
     Gfx_StringSetPosition(94, 122);
+#ifdef SH_PC_PORT
+    Gfx_StringDraw((char*)Loc_Get("SaveDlg_YesNo", "\x07Yes_____________No"), DEFAULT_MAP_MESSAGE_LENGTH);
+#else
     Gfx_StringDraw("\x07Yes_____________No", DEFAULT_MAP_MESSAGE_LENGTH);
+#endif
 
     g_SysWork.enableHighResGlyphs = false;
 
@@ -538,19 +549,31 @@ void Gfx_Results_Save(void) // 0x8004D1A0
 #endif
 
     Gfx_StringSetPosition(82, 200);
+#ifdef SH_PC_PORT
+    Gfx_StringDraw((char*)Loc_Get("SaveDlg_NextGameMode", "NEXT_GAME_MODE"), 15);
+#else
     Gfx_StringDraw("NEXT_GAME_MODE", 15);
+#endif
 
     switch (g_Inventory_GameDifficulty)
     {
         case GameDifficulty_Easy:
             Gfx_StringSetPosition(123, 240);
+        #ifdef SH_PC_PORT
+            Gfx_StringDraw((char*)Loc_Get("MainMenu_Normal", "NORMAL"), 10);
+        #else
             Gfx_StringDraw("NORMAL", 10);
+        #endif
             break;
 
         case GameDifficulty_Normal:
         case GameDifficulty_Hard:
             Gfx_StringSetPosition(136, 240);
+        #ifdef SH_PC_PORT
+            Gfx_StringDraw((char*)Loc_Get("MainMenu_Hard", "HARD"), 10);
+        #else
             Gfx_StringDraw("HARD", 10);
+        #endif
             break;
 
         default:
@@ -1283,6 +1306,16 @@ void Gfx_Inventory_CmdOptionsDraw(void) // 0x8004E864
     POLY_G4* poly;
 
     const char* STRS[] = {
+    #ifdef SH_PC_PORT
+        Loc_Get("InvMenu_Use",     "Use"),
+        Loc_Get("InvMenu_Equip",   "Equip"),
+        Loc_Get("InvMenu_Unequip", "Unequip"),
+        Loc_Get("InvMenu_Reload",  "Reload"),
+        Loc_Get("InvMenu_Detail",  "Detail"),
+        Loc_Get("InvMenu_On",      "On"),
+        Loc_Get("InvMenu_Off",     "Off"),
+        Loc_Get("InvMenu_Look",    "Look")
+    #else
         "Use",
         "Equip",
         "Unequip",
@@ -1291,6 +1324,7 @@ void Gfx_Inventory_CmdOptionsDraw(void) // 0x8004E864
         "On",
         "Off",
         "Look"
+    #endif
     };
 
     ot = &g_OrderingTable2[g_ActiveBufferIdx];

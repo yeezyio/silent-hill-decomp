@@ -8,6 +8,10 @@
 #include "bodyprog/math/math.h"
 #include "bodyprog/ranking.h"
 #include "main/fsqueue.h"
+#ifdef SH_PC_PORT
+#include "pc_locale.h"
+#include <stdio.h>
+#endif
 
 static const s32 pad_rodata_8002B2F8 = 0;
 
@@ -499,6 +503,20 @@ void Results_DisplayInfo(u32* arg0) // 0x80090664
         "Long_range_shots",
         "No_aiming_shots"
     };
+
+#ifdef SH_PC_PORT
+    /* Localize results labels by slot index ("GameResult_<n>"); untranslated keys
+     * (incl. unit/symbol slots) fall back to the original string. */
+    {
+        s32  k;
+        char key[24];
+        for (k = 0; k < (s32)(sizeof(D_8002B4C0) / sizeof(D_8002B4C0[0])); k++)
+        {
+            snprintf(key, sizeof(key), "GameResult_%d", k);
+            D_8002B4C0[k] = (char*)Loc_Get(key, D_8002B4C0[k]);
+        }
+    }
+#endif
 
     Gfx_StringSetColor(StringColorId_White);
 

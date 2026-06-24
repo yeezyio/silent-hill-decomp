@@ -10,6 +10,10 @@
 #include "bodyprog/text/text_draw.h"
 #include "bodyprog/game_boot/game_boot.h"
 #include "screens/saveload.h"
+#ifdef SH_PC_PORT
+#include "pc_locale.h"
+#include <stdio.h>
+#endif
 
 #define SAVE_FLASH_TIMER_MAX 40
 #define SLOT_COLUMN_OFFSET   150
@@ -271,8 +275,13 @@ void SaveScreen_SlotStrAndBottomRectDraw(void) // 0x801E2EBC
     };
 
     const char* SLOT_STRS[] = {
+    #ifdef SH_PC_PORT
+        Loc_Get("SaveMenu_Slot1", "SLOT1"),
+        Loc_Get("SaveMenu_Slot2", "SLOT2")
+    #else
         "SLOT1",
         "SLOT2"
+    #endif
     };
 
     Gfx_StringSetColor(StringColorId_White);
@@ -302,7 +311,11 @@ void SaveScreen_FileIdxDraw(s32 saveIdx, s32 slotIdx, s32 fileId, s32 entryType)
     #define FILE_ID_STR_MARGIN_X FILE_STR_MARGIN_X + SCREEN_POSITION_X(15.75f)
     #define POS_Y                SCREEN_POSITION_Y(14.75f)
 
+    #ifdef SH_PC_PORT
+    const char* FILE_STR = Loc_Get("SaveMenu_File", "FILE");
+    #else
     const char* FILE_STR = "FILE";
+    #endif
 
     if (saveIdx == g_SlotElementSelectedIdx[slotIdx] && entryType >= SavegameEntryType_OutOfBlocks)
     {
@@ -379,9 +392,19 @@ void SaveScreen_SaveLocationDraw(s_SaveScreenElement* saveEntry, s32 saveIdx, s3
             Gfx_StringSetColor(colorId);
         }
 
+    #ifdef SH_PC_PORT
+        {
+            /* Center on the localized name's actual width, not the English offset. */
+            const char* locName = Loc_SaveLocation(nameIdx, g_Savegame_SaveLocationNames[nameIdx]);
+            Gfx_StringSetPosition(((slotIdx * OFFSET_X) + MARGIN_X) - (Gfx_StringWidth(locName) / 2),
+                                  (selectedSaveIdx * OFFSET_Y) + MARGIN_Y);
+            Gfx_StringDraw((char*)locName, 50);
+        }
+    #else
         Gfx_StringSetPosition(((slotIdx * OFFSET_X) + MARGIN_X) - (X_OFFSETS[nameIdx] / 2),
                               (selectedSaveIdx * OFFSET_Y) + MARGIN_Y);
         Gfx_StringDraw(g_Savegame_SaveLocationNames[nameIdx], 50);
+    #endif
     }
 
     #undef OFFSET_X
@@ -430,6 +453,20 @@ void SaveScreen_SavesSlotDraw(s_SaveScreenElement* saveEntry, s32 saveIdx, s32 s
     s32 entryType;
 
     entryType = saveEntry->type;
+
+#ifdef SH_PC_PORT
+    /* Localize memory-card status lines by index ("MemCard_<n>"); untranslated
+     * keys fall back to the original (which carries the inline color/kern codes). */
+    {
+        s32  k;
+        char key[24];
+        for (k = 0; k < (s32)(sizeof(DIALOG_STRS) / sizeof(DIALOG_STRS[0])); k++)
+        {
+            snprintf(key, sizeof(key), "MemCard_%d", k);
+            DIALOG_STRS[k] = Loc_Get(key, DIALOG_STRS[k]);
+        }
+    }
+#endif
 
     if (g_SelectedSaveSlotIdx == slotIdx && saveIdx == 0 && entryType >= SavegameEntryType_CorruptedSave)
     {

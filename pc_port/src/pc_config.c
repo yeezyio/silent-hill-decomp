@@ -53,7 +53,10 @@ s_PcConfig g_PcConfig = {
     .padL3 = "leftstick", .padR3 = "rightstick",
     .padStart = "start", .padSelect = "back",
 
-    .mapName        = "map0_s00"
+    .mapName        = "map0_s00",
+
+    .language       = "auto", /* system-locale match; falls back to English */
+    .fontAccents    = 1       /* overlay accent glyphs for translated text */
 };
 
 /* Blue-blood fix (#41): a per-map buffer overrun writes a stray value into
@@ -310,6 +313,23 @@ void PcConfig_Load(const char* path)
                 strncpy(g_PcConfig.mapName, value, sizeof(g_PcConfig.mapName) - 1);
                 g_PcConfig.mapName[sizeof(g_PcConfig.mapName) - 1] = '\0';
             }
+        }
+        else if (strcmp(key, "language") == 0)
+        {
+            if (strlen(value) > 0 && strlen(value) < sizeof(g_PcConfig.language))
+            {
+                strncpy(g_PcConfig.language, value, sizeof(g_PcConfig.language) - 1);
+                g_PcConfig.language[sizeof(g_PcConfig.language) - 1] = '\0';
+            }
+        }
+        else if (strcmp(key, "languages") == 0)
+        {
+            /* Game-owned registry list (locale name:label pairs) published for the
+             * launcher's dropdown. The game writes it on boot; ignore on read. */
+        }
+        else if (strcmp(key, "font_accents") == 0)
+        {
+            g_PcConfig.fontAccents = (atoi(value) != 0);
         }
         else if (strncmp(key, "launcher_", 9) == 0)
         {

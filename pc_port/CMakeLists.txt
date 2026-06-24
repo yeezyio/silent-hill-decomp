@@ -325,6 +325,13 @@ if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/run_capture.bat")
     file(COPY "${CMAKE_SOURCE_DIR}/run_capture.bat" DESTINATION "${CMAKE_BINARY_DIR}")
 endif()
 
+# Copy localization assets (Assets/Locales/<Name>/{Metadata,Locale}.json) next to
+# the executable so Loc_Init can discover them at runtime. Always refreshed so
+# shipped locale updates propagate; user-added locale folders are left in place.
+if(EXISTS "${CMAKE_SOURCE_DIR}/Assets")
+    file(COPY "${CMAKE_SOURCE_DIR}/Assets" DESTINATION "${CMAKE_BINARY_DIR}")
+endif()
+
 # =============================================================================
 # Map Overlay DLLs (optional — builds all maps as loadable modules)
 # =============================================================================

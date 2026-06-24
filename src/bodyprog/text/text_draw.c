@@ -127,6 +127,18 @@ bool Gfx_StringDraw(char* str, s32 strLength) // 0x8004A8E8
     DR_TPAGE* tPage;
     POLY_FT4* glyphPoly;
     SPRT*     glyphSprt;
+#ifdef SH_PC_PORT
+    /* Accent overlay (PC localization): a 0x0E-0x11 marker byte sets this; the
+     * next base glyph then also draws an accent glyph from ACCENT_OVERLAY. The
+     * {glyph, dx, dy} offsets are eyeballed for the 12x16 font and may want tuning. */
+    s32 pendingAccentMarker = 0;
+    static const struct { u8 glyph; s8 dx; s8 dy; } ACCENT_OVERLAY[4] = {
+        {  0, 2, -3 }, /* acute      '\'' (idx 0)  */
+        { 57, 1, -3 }, /* grave      '`'  (idx 57) */
+        { 55, 1, -3 }, /* circumflex '^'  (idx 55) */
+        {  5, 2,  3 }  /* cedilla    ','  (idx 5, below) */
+    };
+#endif
 
     // Create local argument copies.
     strCpy  = str;
@@ -179,6 +191,13 @@ bool Gfx_StringDraw(char* str, s32 strLength) // 0x8004A8E8
         {
             posX--;
         }
+#ifdef SH_PC_PORT
+        // Accent marker (PC localization): overlay an accent on the next glyph.
+        else if (charCode >= 0x0E && charCode <= 0x11)
+        {
+            pendingAccentMarker = charCode;
+        }
+#endif
         // Regular character.
         else if (charCode >= GLYPH_TABLE_ASCII_OFFSET && charCode <= 'z')
         {
@@ -211,6 +230,9 @@ bool Gfx_StringDraw(char* str, s32 strLength) // 0x8004A8E8
 
                 addPrim(ot, glyphPoly);
                 GsOUT_PACKET_P = (u8*)glyphPoly + sizeof(POLY_FT4);
+#ifdef SH_PC_PORT
+                pendingAccentMarker = 0; /* accent overlay only implemented for the low-res path */
+#endif
             }
             else
             {
@@ -236,6 +258,31 @@ bool Gfx_StringDraw(char* str, s32 strLength) // 0x8004A8E8
                 addPrim(ot, tPage);
 
                 packet += sizeof(DR_TPAGE);
+
+#ifdef SH_PC_PORT
+                // Overlay the pending accent glyph onto the base glyph just drawn.
+                if (pendingAccentMarker != 0)
+                {
+                    s32   ai      = pendingAccentMarker - 0x0E;
+                    s32   ag      = ACCENT_OVERLAY[ai].glyph;
+                    SPRT* accSprt = (SPRT*)packet;
+
+                    *((u32*)&accSprt->w)  = 0x10000C;
+                    addPrimFast(ot, accSprt, 4);
+                    *((u32*)&accSprt->r0) = glyphColor;
+                    *((u32*)&accSprt->x0) = (u16)(posXCpy + ACCENT_OVERLAY[ai].dx) +
+                                            ((posY + ACCENT_OVERLAY[ai].dy) << 16);
+                    setSprtUvClut(accSprt, ag, 0x7FD3);
+                    packet += sizeof(SPRT);
+
+                    tPage = (DR_TPAGE*)packet;
+                    setDrawTPage(tPage, 0, 1, ((ag / FONT_12X16_ATLAS_COLUMN_COUNT) & 0xF) | 16);
+                    addPrim(ot, tPage);
+                    packet += sizeof(DR_TPAGE);
+
+                    pendingAccentMarker = 0;
+                }
+#endif
             }
         }
         // Newline.
@@ -243,6 +290,9 @@ bool Gfx_StringDraw(char* str, s32 strLength) // 0x8004A8E8
         {
             posX  = g_StringPositionX1;
             posY += FONT_12X16_GLYPH_SIZE_Y;
+#ifdef SH_PC_PORT
+            pendingAccentMarker = 0; /* an accent decorates only the next glyph, never across a line */
+#endif
         }
         // New color.
         else if (charCode >= '\x01' && charCode < '\b')
@@ -274,6 +324,43 @@ bool Gfx_StringDraw(char* str, s32 strLength) // 0x8004A8E8
     #undef ATLAS_BASE_Y
 }
 
+#ifdef SH_PC_PORT
+/* Pixel width of a screen-space string as Gfx_StringDraw would advance the cursor.
+ * Lets localized (variable-length) strings be re-centered instead of using the
+ * original hardcoded English offsets. Mirrors the advance logic above; control
+ * codes (color, accent markers) contribute no width. Measures to the first '\n'. */
+s32 Gfx_StringWidth(const char* str)
+{
+    const u8* s     = (const u8*)str;
+    s32       width = 0;
+    u32       c;
+
+    if (s == NULL)
+        return 0;
+
+    while ((c = *s) != '\0')
+    {
+        if (c == '!')      c = '\\';
+        else if (c == '&') c = '^';
+
+        if (c == '_')
+            width += FONT_12X16_SPACE_SIZE;
+        else if (c == '\v')
+            width += 10; /* WIDE_SPACE_SIZE */
+        else if (c == '\x01')
+            width -= 1;
+        else if (c >= GLYPH_TABLE_ASCII_OFFSET && c <= 'z')
+            width += FONT_12X16_GLYPH_WIDTHS[c - GLYPH_TABLE_ASCII_OFFSET];
+        else if (c == '\n')
+            break;
+
+        s++;
+    }
+
+    return width;
+}
+#endif
+
 s32 Gfx_MapMsg_CalculateWidths(s32 mapMsgIdx) // 0x8004ACF4
 {
     s32 i;
@@ -291,7 +378,7 @@ s32 Gfx_MapMsg_CalculateWidths(s32 mapMsgIdx) // 0x8004ACF4
         g_MapMsg_Widths[i] = 0;
     }
 
-    mapMsg = g_MapOverlayHdr.mapMessages[mapMsgIdx];
+    mapMsg = (u8*)SH_MAPMSG(mapMsgIdx);
 
     for (j = 0; j < FONT_12X16_LINE_COUNT_MAX; )
     {
@@ -358,6 +445,16 @@ s32 Gfx_MapMsg_CalculateWidths(s32 mapMsgIdx) // 0x8004ACF4
             case 0:
                 j = FONT_12X16_LINE_COUNT_MAX;
                 break;
+
+#ifdef SH_PC_PORT
+            // PC accent markers contribute no width (the base letter that follows does).
+            case 0x0E:
+            case 0x0F:
+            case 0x10:
+            case 0x11:
+                mapMsg++;
+                break;
+#endif
 
             default:
                 // Convert literal `!` and `&` into `char`s mappable to representative atlas glyphs.
@@ -501,6 +598,16 @@ s32 Gfx_MapMsg_StringDraw(char* mapMsg, s32 strLength) // 0x8004AF18
             case '\t':
                 mapMsg++;
                 break;
+
+#ifdef SH_PC_PORT
+            // PC accent markers: skip here (in-game messages render the base letter only).
+            case 0x0E:
+            case 0x0F:
+            case 0x10:
+            case 0x11:
+                mapMsg++;
+                break;
+#endif
 
             case MAP_MSG_CODE_MARKER:
                 codeTag = *++mapMsg;

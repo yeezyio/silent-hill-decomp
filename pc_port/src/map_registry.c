@@ -2,6 +2,8 @@
 #include "map_overlay_loader.h"
 #include "pc_config.h"
 #include "sh_log.h"
+#include "pc_locale.h"
+#include "bodyprog/text/text_draw.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -24,6 +26,15 @@ int MapRegistry_IsExactCellArena(void)
 {
     return g_CurrentMapIdx == MapIdx_MAP1_S05 || /* Midwich school - otherworld (school boss) */
            g_CurrentMapIdx == MapIdx_MAP7_S03;   /* Nowhere - final boss arena */
+}
+
+/* Localization hook for in-game map messages (declared in text_draw.h, used via
+ * the SH_MAPMSG macro). Composes the key from the active map + index and resolves
+ * it against the current locale, falling back to the embedded English string. */
+const char* PcLoc_MapMsg(s32 idx)
+{
+    const char* orig = g_MapOverlayHdr.mapMessages[idx];
+    return Loc_MapMsg(MapRegistry_GetName(g_CurrentMapIdx), idx, orig);
 }
 
 /* The fully-compiled map0_s00 header (renamed via -DSH_MAP_NAME=map0_s00). */
