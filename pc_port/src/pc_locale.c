@@ -17,13 +17,12 @@
 
 #include <SDL.h>
 
-#include "pc_locale_cyrillic.h" /* RU_CODEPAGE, RU_GLYPH_WIDTHS (generated) */
-
 /* In text_draw.c; swaps the kerning table for a locale's replacement font. */
 extern void Gfx_SetFontWidths(const unsigned char* widths);
 
 #define LOC_LOCALES_DIR  "Assets/Locales"
 #define LOC_FONT_FILE     "Font16.tim"
+#define LOC_FONTMAP_FILE  "Font16.map"
 #define LOC_METADATA_FILE "Metadata.json"
 #define LOC_LOCALE_FILE   "Locale.json"
 #define LOC_MAX_LOCALES   32
@@ -65,16 +64,57 @@ static char         s_activeFontPath[512] = {0};
 static int          s_activeHasFont       = 0;
 static int          s_localeGen           = 0; /* bumped on each activation */
 
-/* Map a Cyrillic code point to its atlas slot byte, or 0 if unmapped. */
-static int CyrByte(unsigned int cp)
+/* Active font's codepage + kerning, loaded from the locale's Font16.map. */
+typedef struct { unsigned int cp; unsigned char byte; } s_CodepageEntry;
+static s_CodepageEntry s_codepage[128];
+static int             s_codepageCount = 0;
+static unsigned char   s_glyphWidths[84];
+
+/* Map a code point to its atlas slot byte via the active codepage, or 0 if none. */
+static int CodepageByte(unsigned int cp)
 {
     int i;
-    for (i = 0; i < (int)(sizeof(RU_CODEPAGE) / sizeof(RU_CODEPAGE[0])); i++)
+    for (i = 0; i < s_codepageCount; i++)
     {
-        if (RU_CODEPAGE[i].cp == cp)
-            return RU_CODEPAGE[i].byte;
+        if (s_codepage[i].cp == cp)
+            return s_codepage[i].byte;
     }
     return 0;
+}
+
+/* Load a locale's Font16.map ("W <84 widths>" then "C <cp> <byte>" lines) into
+ * s_glyphWidths + s_codepage. Returns 1 on success. */
+static int LoadFontMap(const char* path)
+{
+    FILE* f = fopen(path, "r");
+    char  line[256];
+
+    s_codepageCount = 0;
+    if (f == NULL)
+        return 0;
+
+    while (fgets(line, sizeof(line), f) != NULL)
+    {
+        if (line[0] == 'W')
+        {
+            char* p = line + 1;
+            int   i;
+            for (i = 0; i < 84; i++)
+                s_glyphWidths[i] = (unsigned char)strtol(p, &p, 10);
+        }
+        else if (line[0] == 'C' && s_codepageCount < (int)(sizeof(s_codepage) / sizeof(s_codepage[0])))
+        {
+            unsigned cp, byte;
+            if (sscanf(line + 1, "%x %x", &cp, &byte) == 2)
+            {
+                s_codepage[s_codepageCount].cp   = cp;
+                s_codepage[s_codepageCount].byte = (unsigned char)byte;
+                s_codepageCount++;
+            }
+        }
+    }
+    fclose(f);
+    return 1;
 }
 
 /* Case-insensitive string equality (avoids depending on strcasecmp portability). */
@@ -303,10 +343,10 @@ static char* Transliterate(const char* src)
 
             n   = Utf8Decode(s, &cp);
 
-            /* Cyrillic codepage: when the active locale ships a replacement font,
-             * a Cyrillic code point becomes the single byte that indexes its slot. */
+            /* Codepage: when the active locale ships a replacement font, a mapped
+             * code point (e.g. a Cyrillic letter) becomes the byte for its slot. */
             if (s_activeHasFont)
-                cyr = CyrByte(cp);
+                cyr = CodepageByte(cp);
 
             if (cyr != 0)
             {
@@ -732,6 +772,7 @@ static void LoadActiveLocale(int idx)
      * BEFORE transliterating, since Cyrillic mapping depends on it. */
     s_activeHasFont     = 0;
     s_activeFontPath[0] = '\0';
+    s_codepageCount     = 0;
     Gfx_SetFontWidths(NULL);
     if (idx >= 0 && idx < s_localeCount)
     {
@@ -740,8 +781,12 @@ static void LoadActiveLocale(int idx)
                  LOC_LOCALES_DIR, s_locales[idx].name, LOC_FONT_FILE);
         if (stat(s_activeFontPath, &st) == 0)
         {
+            char mapPath[512];
             s_activeHasFont = 1;
-            Gfx_SetFontWidths(RU_GLYPH_WIDTHS);
+            snprintf(mapPath, sizeof(mapPath), "%s/%s/%s",
+                     LOC_LOCALES_DIR, s_locales[idx].name, LOC_FONTMAP_FILE);
+            if (LoadFontMap(mapPath))
+                Gfx_SetFontWidths(s_glyphWidths);
         }
         else
         {

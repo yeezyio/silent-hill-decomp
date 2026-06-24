@@ -52,6 +52,16 @@ Values use the game's **native** text encoding, not plain prose:
 Keep these codes intact when translating. The safest workflow is to start from
 the English value and replace only the words.
 
+### Per-locale font
+
+Each locale ships its own 12x16 atlas (`Font16.tim`) + a `Font16.map` (kerning
+widths + a code-point→slot codepage), generated from SilentEngine's NotoSans-Bold
+by `pc_port/tools/build_locale_fonts.py`. When a locale is active its atlas is
+uploaded over the stock FONT16 VRAM region, so every language shares one
+consistent font. Latin locales use the 84 ASCII slots; non-Latin scripts (e.g.
+Russian) repurpose the letter slots and map their code points via the codepage.
+(The `SILENT HILL` title is a separate image and is unaffected.)
+
 ### Fonts & accents (best-effort)
 
 The PSX font has 84 glyphs (`'` … `z`). Accents are handled at load time:
