@@ -52,33 +52,22 @@ Values use the game's **native** text encoding, not plain prose:
 Keep these codes intact when translating. The safest workflow is to start from
 the English value and replace only the words.
 
-### Per-locale font
+### Fonts (unified Unicode atlas)
 
-Each locale ships its own 12x16 atlas (`Font16.tim`) + a `Font16.map` (kerning
-widths + a code-point→slot codepage), generated from SilentEngine's NotoSans-Bold
-by `pc_port/tools/build_locale_fonts.py`. When a locale is active its atlas is
-uploaded over the stock FONT16 VRAM region, so every language shares one
-consistent font. Latin locales use the 84 ASCII slots; non-Latin scripts (e.g.
-Russian) repurpose the letter slots and map their code points via the codepage.
-(The `SILENT HILL` title is a separate image and is unaffected.)
+Text is rendered from **one** glyph atlas, rasterized from SilentEngine's
+NotoSans-Bold by `pc_port/tools/build_unified_font.py` (output
+`Assets/font/Font16Unified.tim` + the generated `pc_port/include/pc_glyphmap.h`).
+It holds the 84 base ASCII glyphs **plus** every non-ASCII glyph the shipped
+locales use (European accents + Cyrillic). The renderer decodes the locale values
+as **UTF-8** and looks each code point up in the glyph map, so all languages draw
+from the same font with no per-locale swap and no transliteration. The atlas is
+uploaded once at boot over the stock FONT16 VRAM region; the `SILENT HILL` title
+is a separate image and is unaffected.
 
-### Fonts & accents (best-effort)
-
-The PSX font has 84 glyphs (`'` … `z`). Accents are handled at load time:
-
-- **Acute / grave / circumflex / cedilla** (á à â ç, é è ê, …) render as an
-  **accent mark overlaid** on the base letter, drawn in screen-space text
-  (menus, items, save UI). In in-game *message boxes* the base letter is shown
-  without the mark. Set `font_accents = 0` in `config.cfg` to fold these to plain
-  ASCII instead (e.g. if the overlay position needs work on your display).
-- **Umlauts** fold to the German digraph: `ä`→`ae`, `ö`→`oe`, `ü`→`ue`, `ß`→`ss`.
-- **Tilde, ring, ogonek, stroke** (ñ ã, å, ą ę, ł ø) fold to the bare letter —
-  the font has no mark for them.
-- Anything else outside the font becomes `?`. CJK and other scripts are not
-  supported by this bitmap font.
-
-You can author values with real accented characters (é, ü, ñ, …); the engine
-converts them. Spaces must still be `_`.
+Author values with real characters (é, ü, ñ, кириллица, …). Spaces are `_`.
+If you add a language that needs glyphs not yet in the atlas, re-run
+`build_unified_font.py` (it scans every `Locale.json`); the extended row holds up
+to 84 glyphs beyond ASCII.
 
 ## Keys
 

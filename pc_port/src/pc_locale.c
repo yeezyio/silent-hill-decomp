@@ -393,17 +393,15 @@ static char* Transliterate(const char* src)
     return dst;
 }
 
-/* Font-encode a plain display string for menu drawing: transliterate, then turn
- * spaces into the renderer's '_' so labels keep their gaps. Writes into `dst`. */
+/* Encode a plain display string for menu drawing: keep UTF-8 as-is (the renderer
+ * decodes it against the unified atlas) and turn spaces into the renderer's '_'
+ * so labels keep their gaps. Writes into `dst`. */
 static void ToFontSafe(const char* src, char* dst, size_t dstSize)
 {
-    char*  t = Transliterate(src);
     size_t i;
-    if (t == NULL) { if (dstSize) dst[0] = '\0'; return; }
-    for (i = 0; t[i] != '\0' && i + 1 < dstSize; i++)
-        dst[i] = (t[i] == ' ') ? '_' : t[i];
+    for (i = 0; src[i] != '\0' && i + 1 < dstSize; i++)
+        dst[i] = (src[i] == ' ') ? '_' : src[i];
     dst[i] = '\0';
-    free(t);
 }
 
 /* ============================================================
@@ -768,49 +766,15 @@ static void LoadActiveLocale(int idx)
     s_activeIdx = idx;
     s_localeGen++;
 
-    /* Detect a replacement font (e.g. the Russian Cyrillic codepage). Must be set
-     * BEFORE transliterating, since Cyrillic mapping depends on it. */
-    s_activeHasFont     = 0;
-    s_activeFontPath[0] = '\0';
-    s_codepageCount     = 0;
-    Gfx_SetFontWidths(NULL);
-    if (idx >= 0 && idx < s_localeCount)
-    {
-        struct stat st;
-        snprintf(s_activeFontPath, sizeof(s_activeFontPath), "%s/%s/%s",
-                 LOC_LOCALES_DIR, s_locales[idx].name, LOC_FONT_FILE);
-        if (stat(s_activeFontPath, &st) == 0)
-        {
-            char mapPath[512];
-            s_activeHasFont = 1;
-            snprintf(mapPath, sizeof(mapPath), "%s/%s/%s",
-                     LOC_LOCALES_DIR, s_locales[idx].name, LOC_FONTMAP_FILE);
-            if (LoadFontMap(mapPath))
-                Gfx_SetFontWidths(s_glyphWidths);
-        }
-        else
-        {
-            s_activeFontPath[0] = '\0';
-        }
-    }
-
     if (idx < 0 || idx >= s_localeCount)
         return;
 
     snprintf(path, sizeof(path), "%s/%s/%s", LOC_LOCALES_DIR, s_locales[idx].name, LOC_LOCALE_FILE);
     count = JsonLoadPairs(path, &pairs);
 
-    /* Fold every value down to the font glyph set up front so Loc_Get is a pure
-     * table lookup at draw time. */
-    for (i = 0; i < count; i++)
-    {
-        char* safe = Transliterate(pairs[i].val);
-        if (safe != NULL)
-        {
-            free(pairs[i].val);
-            pairs[i].val = safe;
-        }
-    }
+    /* Values are kept as raw UTF-8; the renderer decodes them against the unified
+     * glyph atlas (ASCII + extended accents/Cyrillic). No transliteration. */
+    (void)i;
 
     if (count > 0)
         qsort(pairs, (size_t)count, sizeof(pairs[0]), PairCompare);

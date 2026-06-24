@@ -1,17 +1,15 @@
-/* Per-locale font atlas override (PC port).
+/* Unified font atlas uploader (PC port).
  *
- * A locale may ship a replacement FONT16 atlas (Assets/Locales/<Name>/Font16.tim)
- * — e.g. the Russian Cyrillic codepage. The stock FONT16 is loaded from the disc
- * into VRAM during boot; once we're past boot we upload the locale's atlas over
- * the same VRAM rects (derived from g_Font16AtlasImg exactly as the loader does),
- * so the existing 12x16 renderer draws the new glyphs unchanged. */
+ * The localization renderer uses one atlas covering ASCII + extended glyphs
+ * (accents/Cyrillic), built by tools/build_unified_font.py. It is a 256x32 image
+ * placed at VRAM (0,480): the bottom 16px row holds the base ASCII set (drawn at
+ * v=240, same as the stock FONT16 it replaces) and the top row holds the extended
+ * glyphs (drawn at v=224). We upload it once, after boot, over that region. */
 #include "game.h"
 
 #include "bodyprog/bodyprog.h"
-#include "bodyprog/screen/screen_data.h" /* g_Font16AtlasImg */
-#include "main/fsqueue.h"                 /* s_FsImageDesc */
+#include "bodyprog/screen/screen_data.h" /* g_Font16AtlasImg (for the CLUT pos) */
 #include "sh_log.h"
-#include "pc_locale.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,19 +17,23 @@
 
 extern s_FsImageDesc g_Font16AtlasImg;
 
-static int s_appliedGen = -1;
+#define UNIFIED_FONT_PATH "Assets/font/Font16Unified.tim"
+#define UNIFIED_FONT_VRAM_X 0
+#define UNIFIED_FONT_VRAM_Y 480   /* free 16px gap above the stock FONT16 (y496) */
 
-static int UploadFontTim(const char* path)
+static int s_applied = 0;
+
+static int UploadUnified(void)
 {
     FILE*          f;
     long           sz;
     unsigned char* buf;
-    unsigned       p, clutLen, imgLen;
+    unsigned       p, clutLen;
     short          cw, ch, iw, ih;
     unsigned char *clut, *pix;
     RECT           rect;
 
-    f = fopen(path, "rb");
+    f = fopen(UNIFIED_FONT_PATH, "rb");
     if (f == NULL)
         return 0;
     fseek(f, 0, SEEK_END); sz = ftell(f); fseek(f, 0, SEEK_SET);
@@ -41,8 +43,6 @@ static int UploadFontTim(const char* path)
     if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) { free(buf); fclose(f); return 0; }
     fclose(f);
 
-    /* TIM: magic(4) + flag(4), then CLUT block and image block, each
-     * len(4) + x,y,w,h (4*u16) + data. */
     if (buf[0] != 0x10) { free(buf); return 0; }
     p       = 8;
     clutLen = *(unsigned*)(buf + p);
@@ -50,22 +50,18 @@ static int UploadFontTim(const char* path)
     ch      = *(short*)(buf + p + 10);
     clut    = buf + p + 12;
     p      += clutLen;
-    imgLen  = *(unsigned*)(buf + p);
     iw      = *(short*)(buf + p + 8);
     ih      = *(short*)(buf + p + 10);
     pix     = buf + p + 12;
-    (void)imgLen;
 
-    /* VRAM destination, derived from the atlas descriptor the same way
-     * Fs_QueueTickRead (fsqueue_3.c) does for the native upload. */
-    rect.x = g_Font16AtlasImg.u + ((g_Font16AtlasImg.tPage[1] & 0xF) << 6);
-    rect.y = g_Font16AtlasImg.v + ((g_Font16AtlasImg.tPage[1] << 4) & 0x100);
+    rect.x = UNIFIED_FONT_VRAM_X;
+    rect.y = UNIFIED_FONT_VRAM_Y;
     rect.w = iw;
     rect.h = ih;
     LoadImage(&rect, (u_long*)pix);
     DrawSync(0);
 
-    rect.x = g_Font16AtlasImg.clutX;
+    rect.x = g_Font16AtlasImg.clutX; /* reuse the stock font CLUT slot */
     rect.y = g_Font16AtlasImg.clutY;
     rect.w = cw;
     rect.h = ch;
@@ -73,32 +69,19 @@ static int UploadFontTim(const char* path)
     DrawSync(0);
 
     free(buf);
-    SH_LOG("[LOC] Font override applied: %s", path);
+    SH_LOG("[LOC] Unified font atlas uploaded (%dx%d @ %d,%d)", iw, ih,
+           UNIFIED_FONT_VRAM_X, UNIFIED_FONT_VRAM_Y);
     return 1;
 }
 
-/* Called every frame. Uploads the active locale's replacement font once per
- * activation, after boot (so the stock FONT16 is already in VRAM). */
+/* Called every frame. Uploads the unified atlas once, after boot, so the stock
+ * FONT16 is already resident and we overwrite it with the NotoSans atlas. */
 void PcLoc_FontOverrideTick(void)
 {
-    const char* path;
-
-    /* Wait until past the logo/boot states so FONT16 is loaded in VRAM. */
+    if (s_applied)
+        return;
     if (g_GameWork.gameState < GameState_MainMenu)
         return;
-    if (s_appliedGen == Loc_Generation())
-        return;
-
-    path = Loc_ActiveFontPath();
-    if (path[0] != '\0')
-    {
-        if (UploadFontTim(path))
-            s_appliedGen = Loc_Generation();
-    }
-    else
-    {
-        /* No override for this locale. (Switching from a custom-font locale back
-         * to a stock one needs a restart to restore the Latin atlas.) */
-        s_appliedGen = Loc_Generation();
-    }
+    if (UploadUnified())
+        s_applied = 1;
 }

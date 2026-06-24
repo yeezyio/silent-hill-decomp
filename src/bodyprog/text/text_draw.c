@@ -6,6 +6,30 @@
 #include "bodyprog/text/text_draw.h"
 #include "bodyprog/math/math.h"
 
+#ifdef SH_PC_PORT
+#include "pc_glyphmap.h" /* GLYPH_WIDTHS[168], GLYPH_MAP, GLYPH_EXT_BASE (generated) */
+
+/* Decode one UTF-8 sequence at s; store the code point and return its byte length. */
+static int PcUtf8(const u8* s, unsigned int* cp)
+{
+    if (s[0] < 0x80)                       { *cp = s[0]; return 1; }
+    if ((s[0] & 0xE0) == 0xC0)             { *cp = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F); return 2; }
+    if ((s[0] & 0xF0) == 0xE0)             { *cp = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F); return 3; }
+    *cp = ((s[0] & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    return 4;
+}
+
+/* Extended atlas slot (>= GLYPH_EXT_BASE) for a code point, or -1 if not present. */
+static int PcGlyphSlot(unsigned int cp)
+{
+    int i;
+    for (i = 0; i < GLYPH_MAP_COUNT; i++)
+        if (GLYPH_MAP[i].cp == cp)
+            return GLYPH_MAP[i].slot;
+    return -1;
+}
+#endif
+
 #ifndef PAD_HACK_IGNORE
     const s32 pad_rodata_80025D68 = 0;
     s8 __pad_bss_800C38B2[2];
@@ -31,8 +55,8 @@ static const u8 FONT_12X16_GLYPH_WIDTHS[FONT_12X16_GLYPH_COUNT] = {
  * (e.g. the Russian codepage font) via Gfx_SetFontWidths. After this point the
  * FONT_12X16_GLYPH_WIDTHS name resolves to the pointer, so all kerning reads
  * follow the active font. */
-const u8* g_FontGlyphWidths = FONT_12X16_GLYPH_WIDTHS;
-void Gfx_SetFontWidths(const u8* widths) { g_FontGlyphWidths = widths ? widths : FONT_12X16_GLYPH_WIDTHS; }
+const u8* g_FontGlyphWidths = GLYPH_WIDTHS; /* NotoSans widths (base + extended) */
+void Gfx_SetFontWidths(const u8* widths) { g_FontGlyphWidths = widths ? widths : GLYPH_WIDTHS; }
 #define FONT_12X16_GLYPH_WIDTHS g_FontGlyphWidths
 #endif
 
@@ -173,6 +197,38 @@ bool Gfx_StringDraw(char* str, s32 strLength) // 0x8004A8E8
     while (sizeCpy > 0)
     {
         charCode = *strCpy;
+
+#ifdef SH_PC_PORT
+        /* UTF-8: a multi-byte code point is drawn from the extended atlas row
+         * (VRAM y480, v=224) via the glyph map. ASCII falls through unchanged. */
+        if (charCode >= 0x80)
+        {
+            unsigned int cp;
+            int          nb   = PcUtf8(strCpy, &cp);
+            int          slot = PcGlyphSlot(cp);
+            if (slot >= 0 && !g_SysWork.enableHighResGlyphs)
+            {
+                s32 es = slot - GLYPH_EXT_BASE;
+                posXCpy   = (u16)posX;
+                glyphSprt = (SPRT*)packet;
+                *((u32*)&glyphSprt->w) = 0x10000C;
+                posX += g_FontGlyphWidths[slot];
+                addPrimFast(ot, glyphSprt, 4);
+                *((u32*)&glyphSprt->r0) = glyphColor;
+                *((u32*)&glyphSprt->x0) = posXCpy + (posY << 16);
+                *((u32*)&glyphSprt->u0) = ((es % FONT_12X16_ATLAS_COLUMN_COUNT) * FONT_12X16_GLYPH_SIZE_X)
+                                          + (224 << 8) + (0x7FD3 << 16);
+                packet += sizeof(SPRT);
+                tPage = (DR_TPAGE*)packet;
+                setDrawTPage(tPage, 0, 1, ((es / FONT_12X16_ATLAS_COLUMN_COUNT) & 0xF) | 16);
+                addPrim(ot, tPage);
+                packet += sizeof(DR_TPAGE);
+                sizeCpy--;
+            }
+            strCpy += nb;
+            continue;
+        }
+#endif
 
         // TODO: Try refactoring into switch.
 
@@ -350,6 +406,17 @@ s32 Gfx_StringWidth(const char* str)
 
     while ((c = *s) != '\0')
     {
+        if (c >= 0x80)
+        {
+            unsigned int cp;
+            int          nb   = PcUtf8(s, &cp);
+            int          slot = PcGlyphSlot(cp);
+            if (slot >= 0)
+                width += g_FontGlyphWidths[slot];
+            s += nb;
+            continue;
+        }
+
         if (c == '!')      c = '\\';
         else if (c == '&') c = '^';
 
