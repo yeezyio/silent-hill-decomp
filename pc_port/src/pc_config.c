@@ -55,8 +55,7 @@ s_PcConfig g_PcConfig = {
 
     .mapName        = "map0_s00",
 
-    .language       = "auto", /* system-locale match; falls back to English */
-    .fontAccents    = 1       /* overlay accent glyphs for translated text */
+    .language       = "auto" /* system-locale match; falls back to English */
 };
 
 /* Blue-blood fix (#41): a per-map buffer overrun writes a stray value into
@@ -326,10 +325,6 @@ void PcConfig_Load(const char* path)
         {
             /* Game-owned registry list (locale name:label pairs) published for the
              * launcher's dropdown. The game writes it on boot; ignore on read. */
-        }
-        else if (strcmp(key, "font_accents") == 0)
-        {
-            g_PcConfig.fontAccents = (atoi(value) != 0);
         }
         else if (strncmp(key, "launcher_", 9) == 0)
         {

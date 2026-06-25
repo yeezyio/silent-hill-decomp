@@ -1,9 +1,10 @@
-/* Runtime localization engine for the PC port. See locale.h for the design.
+/* Runtime localization engine for the PC port. See pc_locale.h for the design.
  *
- * Self-contained: a tiny flat-object JSON reader, a UTF-8 -> PSX-glyph
- * transliterator, an on-disk locale registry, and the active key->string store
- * that Loc_Get resolves against. No external dependencies beyond libc + SDL
- * (only for optional system-locale auto-detection). */
+ * Self-contained: a tiny flat-object JSON reader, an on-disk locale registry, and
+ * the active key->string store that Loc_Get resolves against. Values are kept as
+ * raw UTF-8; the renderer decodes them against the unified glyph atlas. No
+ * external dependencies beyond libc + SDL (only for optional system-locale
+ * auto-detection). */
 #include "pc_locale.h"
 #include "pc_config.h"
 #include "sh_log.h"
@@ -17,12 +18,7 @@
 
 #include <SDL.h>
 
-/* In text_draw.c; swaps the kerning table for a locale's replacement font. */
-extern void Gfx_SetFontWidths(const unsigned char* widths);
-
 #define LOC_LOCALES_DIR  "Assets/Locales"
-#define LOC_FONT_FILE     "Font16.tim"
-#define LOC_FONTMAP_FILE  "Font16.map"
 #define LOC_METADATA_FILE "Metadata.json"
 #define LOC_LOCALE_FILE   "Locale.json"
 #define LOC_MAX_LOCALES   32
@@ -48,74 +44,8 @@ static s_LocaleInfo s_locales[LOC_MAX_LOCALES];
 static int          s_localeCount  = 0;
 static int          s_activeIdx    = -1;
 
-/* When set, accented letters are stored as <accent-marker><base> so Gfx_StringDraw
- * overlays an accent glyph; when clear, they fold to the bare ASCII letter. Driven
- * by config `font_accents`; lets the (font-dependent) overlay be turned off without
- * a rebuild if it renders poorly. */
-static int          s_fontAccents  = 1;
-
 static s_LocPair*   s_pairs        = NULL; /* active locale, sorted by key */
 static int          s_pairCount    = 0;
-
-/* Replacement font for the active locale (e.g. the Russian Cyrillic codepage).
- * When present, Cyrillic code points transliterate to codepage bytes instead of
- * folding to '?', and the font-override uploader swaps the VRAM atlas. */
-static char         s_activeFontPath[512] = {0};
-static int          s_activeHasFont       = 0;
-static int          s_localeGen           = 0; /* bumped on each activation */
-
-/* Active font's codepage + kerning, loaded from the locale's Font16.map. */
-typedef struct { unsigned int cp; unsigned char byte; } s_CodepageEntry;
-static s_CodepageEntry s_codepage[128];
-static int             s_codepageCount = 0;
-static unsigned char   s_glyphWidths[84];
-
-/* Map a code point to its atlas slot byte via the active codepage, or 0 if none. */
-static int CodepageByte(unsigned int cp)
-{
-    int i;
-    for (i = 0; i < s_codepageCount; i++)
-    {
-        if (s_codepage[i].cp == cp)
-            return s_codepage[i].byte;
-    }
-    return 0;
-}
-
-/* Load a locale's Font16.map ("W <84 widths>" then "C <cp> <byte>" lines) into
- * s_glyphWidths + s_codepage. Returns 1 on success. */
-static int LoadFontMap(const char* path)
-{
-    FILE* f = fopen(path, "r");
-    char  line[256];
-
-    s_codepageCount = 0;
-    if (f == NULL)
-        return 0;
-
-    while (fgets(line, sizeof(line), f) != NULL)
-    {
-        if (line[0] == 'W')
-        {
-            char* p = line + 1;
-            int   i;
-            for (i = 0; i < 84; i++)
-                s_glyphWidths[i] = (unsigned char)strtol(p, &p, 10);
-        }
-        else if (line[0] == 'C' && s_codepageCount < (int)(sizeof(s_codepage) / sizeof(s_codepage[0])))
-        {
-            unsigned cp, byte;
-            if (sscanf(line + 1, "%x %x", &cp, &byte) == 2)
-            {
-                s_codepage[s_codepageCount].cp   = cp;
-                s_codepage[s_codepageCount].byte = (unsigned char)byte;
-                s_codepageCount++;
-            }
-        }
-    }
-    fclose(f);
-    return 1;
-}
 
 /* Case-insensitive string equality (avoids depending on strcasecmp portability). */
 static int StrCaseEq(const char* a, const char* b)
@@ -131,7 +61,7 @@ static int StrCaseEq(const char* a, const char* b)
 }
 
 /* ============================================================
- * UTF-8 helpers
+ * UTF-8 helper (for decoding \uXXXX JSON escapes back to UTF-8)
  * ============================================================ */
 
 /* Encode a Unicode code point as UTF-8 into `out` (>= 4 bytes). Returns length. */
@@ -160,237 +90,6 @@ static int Utf8Encode(unsigned int cp, char* out)
     out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
     out[3] = (char)(0x80 | (cp & 0x3F));
     return 4;
-}
-
-/* Decode one UTF-8 sequence starting at `s`. Stores the code point in *cp and
- * returns the number of bytes consumed (1 on malformed input). */
-static int Utf8Decode(const unsigned char* s, unsigned int* cp)
-{
-    unsigned char c = s[0];
-    if (c < 0x80) { *cp = c; return 1; }
-    if ((c & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80)
-    {
-        *cp = ((c & 0x1F) << 6) | (s[1] & 0x3F);
-        return 2;
-    }
-    if ((c & 0xF0) == 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80)
-    {
-        *cp = ((c & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
-        return 3;
-    }
-    if ((c & 0xF8) == 0xF0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 && (s[3] & 0xC0) == 0x80)
-    {
-        *cp = ((c & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
-        return 4;
-    }
-    *cp = c;
-    return 1;
-}
-
-/* ============================================================
- * Transliteration: UTF-8 -> the 84-glyph PSX font ('\'' .. 'z')
- *
- * Bytes < 0x80 pass through untouched — this preserves the game's own text codes
- * (`_` space, `~N`/`~C` markers, '\n', '\t'). Only multi-byte code points are
- * folded down to ASCII; anything with no sensible mapping becomes '?'.
- * ============================================================ */
-
-/* PC accent-overlay markers, emitted before a base letter to tell Gfx_StringDraw
- * to draw an accent glyph over it. They live in the unused 0x0E-0x11 control byte
- * range; the in-game message renderer skips them (rendering the base letter only). */
-#define LOC_ACC_ACUTE      0x0E
-#define LOC_ACC_GRAVE      0x0F
-#define LOC_ACC_CIRCUMFLEX 0x10
-#define LOC_ACC_CEDILLA    0x11
-
-/* Decompose a code point into a font-safe base string, optionally setting *marker
- * to a LOC_ACC_* accent to overlay. Diaereses fold to the German digraph (ae/oe/
- * ue — the font has no umlaut glyph); tilde/ogonek/ring/stroke fold to the bare
- * letter. Returns NULL when the code point has no mapping. */
-static const char* AccentDecompose(unsigned int cp, char* marker)
-{
-    *marker = 0;
-    switch (cp)
-    {
-        /* Latin-1 supplement. */
-        case 0x00C0: *marker = LOC_ACC_GRAVE;      return "A"; /* A grave */
-        case 0x00C1: *marker = LOC_ACC_ACUTE;      return "A"; /* A acute */
-        case 0x00C2: *marker = LOC_ACC_CIRCUMFLEX; return "A"; /* A circumflex */
-        case 0x00C3: return "A";  /* A tilde */
-        case 0x00C4: return "Ae"; /* A diaeresis */
-        case 0x00C5: return "A";  /* A ring */
-        case 0x00C6: return "AE";
-        case 0x00C7: *marker = LOC_ACC_CEDILLA;    return "C"; /* C cedilla */
-        case 0x00C8: *marker = LOC_ACC_GRAVE;      return "E";
-        case 0x00C9: *marker = LOC_ACC_ACUTE;      return "E";
-        case 0x00CA: *marker = LOC_ACC_CIRCUMFLEX; return "E";
-        case 0x00CB: return "E"; /* E diaeresis */
-        case 0x00CC: *marker = LOC_ACC_GRAVE;      return "I";
-        case 0x00CD: *marker = LOC_ACC_ACUTE;      return "I";
-        case 0x00CE: *marker = LOC_ACC_CIRCUMFLEX; return "I";
-        case 0x00CF: return "I"; /* I diaeresis */
-        case 0x00D0: return "D";
-        case 0x00D1: return "N"; /* N tilde */
-        case 0x00D2: *marker = LOC_ACC_GRAVE;      return "O";
-        case 0x00D3: *marker = LOC_ACC_ACUTE;      return "O";
-        case 0x00D4: *marker = LOC_ACC_CIRCUMFLEX; return "O";
-        case 0x00D5: return "O";  /* O tilde */
-        case 0x00D6: return "Oe"; /* O diaeresis */
-        case 0x00D8: return "O";  /* O stroke */
-        case 0x00D9: *marker = LOC_ACC_GRAVE;      return "U";
-        case 0x00DA: *marker = LOC_ACC_ACUTE;      return "U";
-        case 0x00DB: *marker = LOC_ACC_CIRCUMFLEX; return "U";
-        case 0x00DC: return "Ue"; /* U diaeresis */
-        case 0x00DD: *marker = LOC_ACC_ACUTE;      return "Y";
-        case 0x00DF: return "ss"; /* sharp s */
-        case 0x00E0: *marker = LOC_ACC_GRAVE;      return "a";
-        case 0x00E1: *marker = LOC_ACC_ACUTE;      return "a";
-        case 0x00E2: *marker = LOC_ACC_CIRCUMFLEX; return "a";
-        case 0x00E3: return "a";  /* a tilde */
-        case 0x00E4: return "ae"; /* a diaeresis */
-        case 0x00E5: return "a";  /* a ring */
-        case 0x00E6: return "ae";
-        case 0x00E7: *marker = LOC_ACC_CEDILLA;    return "c";
-        case 0x00E8: *marker = LOC_ACC_GRAVE;      return "e";
-        case 0x00E9: *marker = LOC_ACC_ACUTE;      return "e";
-        case 0x00EA: *marker = LOC_ACC_CIRCUMFLEX; return "e";
-        case 0x00EB: return "e"; /* e diaeresis */
-        case 0x00EC: *marker = LOC_ACC_GRAVE;      return "i";
-        case 0x00ED: *marker = LOC_ACC_ACUTE;      return "i";
-        case 0x00EE: *marker = LOC_ACC_CIRCUMFLEX; return "i";
-        case 0x00EF: return "i"; /* i diaeresis */
-        case 0x00F0: return "d";
-        case 0x00F1: return "n"; /* n tilde */
-        case 0x00F2: *marker = LOC_ACC_GRAVE;      return "o";
-        case 0x00F3: *marker = LOC_ACC_ACUTE;      return "o";
-        case 0x00F4: *marker = LOC_ACC_CIRCUMFLEX; return "o";
-        case 0x00F5: return "o";  /* o tilde */
-        case 0x00F6: return "oe"; /* o diaeresis */
-        case 0x00F8: return "o";  /* o stroke */
-        case 0x00F9: *marker = LOC_ACC_GRAVE;      return "u";
-        case 0x00FA: *marker = LOC_ACC_ACUTE;      return "u";
-        case 0x00FB: *marker = LOC_ACC_CIRCUMFLEX; return "u";
-        case 0x00FC: return "ue"; /* u diaeresis */
-        case 0x00FD: *marker = LOC_ACC_ACUTE;      return "y";
-        case 0x00FF: return "y"; /* y diaeresis */
-
-        /* Latin Extended-A: the bits FR/DE/IT/ES/PL actually use. Capital and
-         * small forms are kept distinct (the PSX font has A-Z and a-z). */
-        case 0x0152: return "OE";
-        case 0x0153: return "oe";
-        case 0x0104: return "A"; case 0x0105: return "a"; /* A/a ogonek (Polish) */
-        case 0x0106: *marker = LOC_ACC_ACUTE; return "C";
-        case 0x0107: *marker = LOC_ACC_ACUTE; return "c";
-        case 0x0118: return "E"; case 0x0119: return "e"; /* E/e ogonek */
-        case 0x0141: return "L"; case 0x0142: return "l"; /* L/l stroke */
-        case 0x0143: *marker = LOC_ACC_ACUTE; return "N";
-        case 0x0144: *marker = LOC_ACC_ACUTE; return "n";
-        case 0x015A: *marker = LOC_ACC_ACUTE; return "S";
-        case 0x015B: *marker = LOC_ACC_ACUTE; return "s";
-        case 0x0179: *marker = LOC_ACC_ACUTE; return "Z";
-        case 0x017A: *marker = LOC_ACC_ACUTE; return "z";
-        case 0x017B: return "Z"; case 0x017C: return "z"; /* Z/z dot above */
-
-        /* Punctuation that translators paste in from word processors. */
-        case 0x2018: case 0x2019: return "'";  /* curly single quotes */
-        case 0x201C: case 0x201D: return "'";  /* curly double quotes (no '"' glyph) */
-        case 0x2013: case 0x2014: return "-";  /* en/em dash */
-        case 0x2026: return "...";             /* ellipsis */
-        case 0x00A0: return "_";               /* non-breaking space */
-        case 0x00BF: return "?";               /* inverted question mark */
-        case 0x00A1: return "!";               /* inverted exclamation */
-
-        default: return NULL;
-    }
-}
-
-/* Allocate a font-safe copy of a UTF-8 string. Caller frees. */
-static char* Transliterate(const char* src)
-{
-    size_t cap = strlen(src) + 1;
-    char*  dst = (char*)malloc(cap);
-    size_t len = 0;
-    const unsigned char* s = (const unsigned char*)src;
-
-    if (dst == NULL)
-        return NULL;
-
-    while (*s != '\0')
-    {
-        const char* rep;
-        int         n;
-
-        if (*s < 0x80)
-        {
-            /* Grow check kept simple: each ASCII byte costs at most 1. */
-            if (len + 1 >= cap)
-            {
-                char* grown;
-                cap *= 2;
-                grown = (char*)realloc(dst, cap);
-                if (!grown) { free(dst); return NULL; }
-                dst = grown;
-            }
-            dst[len++] = (char)*s++;
-            continue;
-        }
-
-        {
-            unsigned int cp;
-            char         marker = 0;
-            size_t       rl;
-            int          cyr    = 0;
-
-            n   = Utf8Decode(s, &cp);
-
-            /* Codepage: when the active locale ships a replacement font, a mapped
-             * code point (e.g. a Cyrillic letter) becomes the byte for its slot. */
-            if (s_activeHasFont)
-                cyr = CodepageByte(cp);
-
-            if (cyr != 0)
-            {
-                rep = NULL;
-            }
-            else
-            {
-                rep = AccentDecompose(cp, &marker);
-                if (rep == NULL)
-                {
-                    marker = 0;
-                    rep    = "?";
-                }
-            }
-            rl = cyr ? 1 : strlen(rep);
-
-            /* +2 headroom: optional accent marker byte + base, plus the NUL. */
-            while (len + rl + 2 >= cap)
-            {
-                char* grown;
-                cap *= 2;
-                grown = (char*)realloc(dst, cap);
-                if (!grown) { free(dst); return NULL; }
-                dst = grown;
-            }
-
-            if (cyr != 0)
-            {
-                dst[len++] = (char)cyr;
-            }
-            else
-            {
-                if (marker != 0 && s_fontAccents)
-                    dst[len++] = marker;
-                memcpy(dst + len, rep, rl);
-                len += rl;
-            }
-        }
-
-        s += n;
-    }
-
-    dst[len] = '\0';
-    return dst;
 }
 
 /* Encode a plain display string for menu drawing: keep UTF-8 as-is (the renderer
@@ -731,7 +430,7 @@ static void ScanLocales(void)
     s_localeCount = 0;
     if (dir == NULL)
     {
-        SH_LOG("[LOC] %s not found — localization disabled (English only).", LOC_LOCALES_DIR);
+        SH_DBG("[LOC] %s not found — localization disabled (English only).", LOC_LOCALES_DIR);
         return;
     }
 
@@ -758,13 +457,12 @@ static void LoadActiveLocale(int idx)
 {
     char       path[512];
     s_LocPair* pairs;
-    int        count, i;
+    int        count;
 
     FreePairs(s_pairs, s_pairCount);
     s_pairs     = NULL;
     s_pairCount = 0;
     s_activeIdx = idx;
-    s_localeGen++;
 
     if (idx < 0 || idx >= s_localeCount)
         return;
@@ -774,7 +472,6 @@ static void LoadActiveLocale(int idx)
 
     /* Values are kept as raw UTF-8; the renderer decodes them against the unified
      * glyph atlas (ASCII + extended accents/Cyrillic). No transliteration. */
-    (void)i;
 
     if (count > 0)
         qsort(pairs, (size_t)count, sizeof(pairs[0]), PairCompare);
@@ -782,7 +479,7 @@ static void LoadActiveLocale(int idx)
     s_pairs     = pairs;
     s_pairCount = count;
 
-    SH_LOG("[LOC] Active locale: %s (%d strings)", s_locales[idx].name, count);
+    SH_DBG("[LOC] Active locale: %s (%d strings)", s_locales[idx].name, count);
 }
 
 const char* Loc_Get(const char* key, const char* fallback)
@@ -805,19 +502,6 @@ const char* Loc_Get(const char* key, const char* fallback)
     }
 
     return (fallback != NULL) ? fallback : "";
-}
-
-/* Path to the active locale's replacement font atlas, or "" if it uses the
- * stock font. Used by the font-override uploader. */
-const char* Loc_ActiveFontPath(void)
-{
-    return s_activeFontPath;
-}
-
-/* Bumped on every locale activation; lets the font uploader re-apply on change. */
-int Loc_Generation(void)
-{
-    return s_localeGen;
 }
 
 /* ============================================================
@@ -986,8 +670,6 @@ void Loc_Init(void)
     int         idx  = -1;
     int         i;
 
-    s_fontAccents = g_PcConfig.fontAccents;
-
     ScanLocales();
     if (s_localeCount == 0)
         return;
@@ -1023,12 +705,12 @@ void Loc_Init(void)
         }
         if (idx < 0)
         {
-            SH_LOG("[LOC] Configured language '%s' not found — using default.", want);
+            SH_DBG("[LOC] Configured language '%s' not found — using default.", want);
             idx = 0;
         }
     }
 
     LoadActiveLocale(idx);
-    SH_LOG("[LOC] %d locale(s) registered, active: %s",
+    SH_DBG("[LOC] %d locale(s) registered, active: %s",
            s_localeCount, (idx >= 0) ? s_locales[idx].name : "(none)");
 }

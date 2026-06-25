@@ -146,10 +146,6 @@ void Gfx_StringDrawInt(s32 widthMin, s32 strLength);
  *  re-center localized strings whose length differs from the English original. */
 s32 Gfx_StringWidth(const char* str);
 
-/** Swap the active glyph-width table (NULL restores the default Latin font).
- *  Used when a locale ships a replacement font atlas (e.g. the Russian codepage). */
-void Gfx_SetFontWidths(const unsigned char* widths);
-
 /** Localization hook for in-game map messages. Returns the active-locale
  *  translation of message `idx` for the current map, or the original embedded
  *  string when there is no translation. Implemented in pc_port/src/map_registry.c. */

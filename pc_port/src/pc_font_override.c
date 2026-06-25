@@ -35,15 +35,18 @@ static int UploadUnified(void)
 
     f = fopen(UNIFIED_FONT_PATH, "rb");
     if (f == NULL)
+    {
+        SH_DBG("[LOC] font upload FAILED: cannot open %s (cwd-relative)", UNIFIED_FONT_PATH);
         return 0;
+    }
     fseek(f, 0, SEEK_END); sz = ftell(f); fseek(f, 0, SEEK_SET);
-    if (sz < 32) { fclose(f); return 0; }
+    if (sz < 32) { SH_DBG("[LOC] font upload FAILED: file too small (%ld)", sz); fclose(f); return 0; }
     buf = (unsigned char*)malloc((size_t)sz);
     if (buf == NULL) { fclose(f); return 0; }
     if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) { free(buf); fclose(f); return 0; }
     fclose(f);
 
-    if (buf[0] != 0x10) { free(buf); return 0; }
+    if (buf[0] != 0x10) { SH_DBG("[LOC] font upload FAILED: bad TIM magic 0x%02X", buf[0]); free(buf); return 0; }
     p       = 8;
     clutLen = *(unsigned*)(buf + p);
     cw      = *(short*)(buf + p + 8);
@@ -69,7 +72,7 @@ static int UploadUnified(void)
     DrawSync(0);
 
     free(buf);
-    SH_LOG("[LOC] Unified font atlas uploaded (%dx%d @ %d,%d)", iw, ih,
+    SH_DBG("[LOC] Unified font atlas uploaded (%dx%d @ %d,%d)", iw, ih,
            UNIFIED_FONT_VRAM_X, UNIFIED_FONT_VRAM_Y);
     return 1;
 }
@@ -78,10 +81,27 @@ static int UploadUnified(void)
  * FONT16 is already resident and we overwrite it with the NotoSans atlas. */
 void PcLoc_FontOverrideTick(void)
 {
+    static int s_loggedGate = 0;
+    static int s_attempts   = 0;
+
     if (s_applied)
         return;
     if (g_GameWork.gameState < GameState_MainMenu)
+    {
+        if (!s_loggedGate)
+        {
+            SH_DBG("[LOC] font override waiting: gameState=%d < MainMenu(%d)",
+                   g_GameWork.gameState, GameState_MainMenu);
+            s_loggedGate = 1;
+        }
         return;
-    if (UploadUnified())
-        s_applied = 1;
+    }
+    if (s_attempts < 3)
+    {
+        s_attempts++;
+        SH_DBG("[LOC] font override gate passed (gameState=%d), upload attempt %d",
+               g_GameWork.gameState, s_attempts);
+        if (UploadUnified())
+            s_applied = 1;
+    }
 }

@@ -40,11 +40,6 @@ const char* Loc_SaveLocation(int locationId, const char* fallback);
  * `mapName` is the active overlay's short name, e.g. "map0_s00". */
 const char* Loc_MapMsg(const char* mapName, int idx, const char* fallback);
 
-/* Path to the active locale's replacement font atlas ("Assets/Locales/<Name>/
- * Font16.tim"), or "" if it uses the stock font. Used by the font uploader. */
-const char* Loc_ActiveFontPath(void);
-int         Loc_Generation(void);        /* bumped on each locale activation */
-
 /* --- Language selection (Options menu + launcher publish) --- */
 
 int         Loc_Count(void);             /* registered locale count */
