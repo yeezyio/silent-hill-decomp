@@ -1,5 +1,5 @@
 {
-    "_comment": "Reference template. Values use the game's native text encoding: '_' is a space, '~N' newline, '~E' end, '~C2'/'~C7' color codes. Copy this folder, translate the values, and keep those codes intact. Characters outside the PSX font are transliterated to ASCII at load time (e.g. e->e); unmappable glyphs become '?'.",
+    "_comment": "Reference template. Values use the game's native text encoding: '_' is a space, '~N' newline, '~E' end, '~C2'/'~C7' color codes. Copy this folder, translate the values, and keep those codes intact. Write real Unicode characters (e, u, кириллица); the renderer decodes UTF-8 against the unified NotoSans atlas. If a glyph is missing, re-run pc_port/tools/build_unified_font.py.",
 
     "MainMenu_Load":     "LOAD",
     "MainMenu_Continue": "CONTINUE",

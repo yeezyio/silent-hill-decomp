@@ -606,7 +606,10 @@ s32 Gfx_MapMsg_StringDraw(char* mapMsg, s32 strLength) // 0x8004AF18
         charCode = *mapMsg;
 
 #ifdef SH_PC_PORT
-        /* UTF-8 multi-byte glyph (accent/Cyrillic) from the extended atlas row. */
+        /* UTF-8 multi-byte glyph (accent/Cyrillic) from the extended atlas row.
+         * Drawn (and counted toward the rollout length) only in the low-res SPRT
+         * path: the extended row has no high-res quad atlas, so under
+         * enableHighResGlyphs the code point is consumed but not rendered. */
         if (charCode >= 0x80)
         {
             unsigned int cp;

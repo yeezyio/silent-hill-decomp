@@ -16,8 +16,9 @@ Mappings (all verified against SilentEngine's EnglishUs == our embedded English)
                                            hand-checked Russian file.
 
 The SE Russian + EnglishUs `Locale.json` files are read from --se (a checkout of
-the localization branch). Run `extract_locale.py` is invoked internally for the
-English reference. A self-check converts SE *English* and asserts it reproduces
+the localization branch). `extract_locale.py` is invoked internally (as a
+subprocess) for the English reference. A self-check converts SE *English* and
+asserts it reproduces
 our embedded English exactly (code sequence + text) before any Russian is
 written; it aborts on mismatch.
 
@@ -95,8 +96,8 @@ def conv_menu(s):
                 out.append('\n')
             elif tag == 'T':
                 out.append('\t')
-            elif tag == 'C' and dig:
-                out.append(chr(int(dig)))
+            elif tag == 'C' and dig and 2 <= int(dig) <= 7:
+                out.append(chr(int(dig)))  # menu colour byte (0x02-0x07)
             i = m.end()
             continue
         c = s[i]
@@ -200,11 +201,14 @@ def main():
                 idx.setdefault(_norm(v), []).append(k)
         return idx
 
+    # Per category: (english-text index, value converter, structural validator).
+    # The validator (alongside _norm) gates the self-check; keeping it next to the
+    # converter makes it impossible for the two to drift.
     cat = {
-        "Item_": (index("Item_"), conv_menu, "menu"),
-        "ItemDesc_": (index("ItemDesc_"), conv_menu, "menu"),
-        "SaveLoc_": (index("SaveLoc_"), conv_menu, "menu"),
-        "CommonMsg_": (index("CommonMsg_"), conv_map, "map"),
+        "Item_": (index("Item_"), conv_menu, _menu_struct),
+        "ItemDesc_": (index("ItemDesc_"), conv_menu, _menu_struct),
+        "SaveLoc_": (index("SaveLoc_"), conv_menu, _menu_struct),
+        "CommonMsg_": (index("CommonMsg_"), conv_map, _map_codes),
     }
 
     def lookup(prefix, en_val):
@@ -217,14 +221,10 @@ def main():
                 ourk = lookup(prefix, sv)
                 if ourk is None:
                     break
-                conv = cat[prefix][1](sv)
-                if cat[prefix][2] == "map":
-                    good = (_map_codes(conv) == _map_codes(our_en[ourk]) and
-                            _norm(conv) == _norm(our_en[ourk]))
-                else:
-                    good = (_menu_struct(conv) == _menu_struct(our_en[ourk]) and
-                            _norm(conv) == _norm(our_en[ourk]))
-                if not good:
+                _, conv_fn, validate = cat[prefix]
+                conv = conv_fn(sv)
+                if (validate(conv) != validate(our_en[ourk]) or
+                        _norm(conv) != _norm(our_en[ourk])):
                     failures.append((prefix, sk, ourk))
                 break
 

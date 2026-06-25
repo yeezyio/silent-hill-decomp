@@ -13,8 +13,9 @@
  *     so a translated string drops straight into the existing 12x16 renderer.
  *   - Lookups fall back to the original embedded English string, so a missing or
  *     absent locale renders byte-identically to the stock decomp (no regression).
- *   - Values are transliterated to the 84-glyph PSX font at load time (e -> e,
- *     n -> n, etc.); glyphs the font cannot draw become '?'. Best-effort only.
+ *   - Values are kept as raw UTF-8; the renderer decodes them against one unified
+ *     glyph atlas (ASCII + extended accents/Cyrillic). Code points absent from the
+ *     atlas are silently skipped.
  */
 
 /* Scan Assets/Locales/, read every Metadata.json, then activate the locale named
@@ -23,7 +24,7 @@
 void Loc_Init(void);
 
 /* Resolve a translation key in the active locale. Returns the translated string
- * (already font-encoded + transliterated) when present, otherwise `fallback`
+ * (raw UTF-8 in the game's native text encoding) when present, otherwise `fallback`
  * (the original decomp string) so English/untranslated text is unchanged.
  * Returns "" only when the key is missing and `fallback` is NULL. The returned
  * pointer stays valid until the active locale changes. */
